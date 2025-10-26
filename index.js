@@ -57,6 +57,4 @@ app.get("/", (req, res) => {
   res.send("✅ Pratique Backend Çalışıyor!");
 });
 
-app.listen(process.env.PORT || 3000, () =>
-  console.log(`🚀 Backend running on port ${process.env.PORT}`)
-);
+export default app;
