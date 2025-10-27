@@ -1,28 +1,14 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import fs from "fs";
 
 dotenv.config();
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const DATA_FILE = "./data.json";
-
-// Verileri oku/yaz
-function readData() {
-  try {
-    const raw = fs.readFileSync(DATA_FILE);
-    return JSON.parse(raw);
-  } catch (e) {
-    return [];
-  }
-}
-
-function saveData(data) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-}
+// 🔹 Geçici veritabanı (RAM üzerinde)
+let users = [];
 
 // 🔹 Kullanıcı kaydetme/güncelleme endpoint
 app.post("/update", (req, res) => {
@@ -31,7 +17,6 @@ app.post("/update", (req, res) => {
     return res.status(400).json({ error: "Eksik veri" });
   }
 
-  const users = readData();
   const existing = users.find((u) => u.telegram_id === telegram_id);
 
   if (existing) {
@@ -42,17 +27,16 @@ app.post("/update", (req, res) => {
     users.push({ telegram_id, username, name, prtq });
   }
 
-  saveData(users);
   return res.json({ success: true });
 });
 
 // 🔹 Leaderboard endpoint
 app.get("/leaderboard", (req, res) => {
-  const users = readData();
   const sorted = users.sort((a, b) => b.prtq - a.prtq).slice(0, 20);
   res.json(sorted);
 });
 
+// 🔹 Test endpoint
 app.get("/", (req, res) => {
   res.send("✅ Pratique Backend Çalışıyor!");
 });
