@@ -2,11 +2,33 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import fs from "fs";
+import TelegramBot from "node-telegram-bot-api"; // 👈 Telegram bot modülü
 
 dotenv.config();
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// === 🔹 Telegram BOT Başlangıç ===
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const bot = new TelegramBot(BOT_TOKEN, { polling: true });
+
+bot.command("start", (ctx) => {
+  ctx.reply("🎮 Pratique Clicker başlat 👇", {
+    reply_markup: {
+      keyboard: [
+        [
+          {
+            text: "🚀 Oyunu Aç",
+            web_app: { url: "https://pratique-frontend.vercel.app" }, // 🔗 senin frontend URL
+          },
+        ],
+      ],
+      resize_keyboard: true,
+    },
+  });
+});
+// === 🔹 Telegram BOT Bitiş ===
 
 const DATA_FILE = "./data.json";
 const ADMIN_SECRET = process.env.ADMIN_SECRET || "devsecret";
@@ -60,7 +82,7 @@ function applyRobotAccrual(user) {
   // güvenlik: çok uzun kapalı kalma tavanı
   if (deltaSec > MAX_OFFLINE_SECONDS) deltaSec = MAX_OFFLINE_SECONDS;
 
-  const gain = deltaSec * lvl; // 1 sn * seviye
+  const gain = deltaSec * lvl; // saniyede 1 * seviye
   user.prtq = Number(user.prtq || 0) + gain;
   user.last_robot_ts = new Date(now).toISOString();
 }
@@ -91,7 +113,6 @@ app.post("/update", (req, res) => {
   // önce robot tahakkuk
   applyRobotAccrual(user);
 
-  // güvenli güncelleme: sunucu değeri ile istemci değeri arasından yükseği al
   user.prtq = Math.max(Number(user.prtq || 0), Number(prtq));
   if (username) user.username = username;
   if (name) user.name = name;
@@ -111,7 +132,7 @@ app.get("/leaderboard", (_req, res) => {
   res.json(top);
 });
 
-// ---- satın alma simülasyonu (test): webhook yokken dev içi aktif et ----
+// ---- satın alma simülasyonu ----
 app.post("/robot/activate", (req, res) => {
   const { telegram_id, level, secret } = req.body;
   if (secret !== ADMIN_SECRET) return res.status(403).json({ error: "Yetkisiz" });
@@ -127,10 +148,7 @@ app.post("/robot/activate", (req, res) => {
   res.json({ success: true, robot_level: lvl });
 });
 
-
-// ---- 💳 Yeni: Robot ödeme sistemi ----
-
-// Sahte ödeme linki oluştur (frontend çağırır)
+// ---- 💳 Robot ödeme sistemi ----
 app.post("/create-payment", (req, res) => {
   const { telegram_id, currentLevel } = req.body;
   if (!telegram_id) return res.status(400).json({ error: "Eksik kullanıcı" });
@@ -151,7 +169,6 @@ app.post("/create-payment", (req, res) => {
   });
 });
 
-// Ödeme onayı (gerçekte webhook tetikler)
 app.post("/verify-payment", (req, res) => {
   const { telegram_id, amount, secret } = req.body;
   if (secret !== ADMIN_SECRET) return res.status(403).json({ error: "Yetkisiz" });
