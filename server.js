@@ -134,6 +134,25 @@ app.get("/user/:telegramId", async (req, res) => {
   }
 });
 
+// 🔹 Davet sayısını dönen endpoint
+app.get("/user/invites/:telegramId", async (req, res) => {
+  try {
+    const { telegramId } = req.params;
+
+    const user = await prisma.user.findUnique({
+      where: { telegramId: String(telegramId) },
+      select: { inviteCount: true },
+    });
+
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    res.json({ inviteCount: user.inviteCount });
+  } catch (err) {
+    console.error("Invite count error:", err);
+    res.status(500).json({ error: "Sunucu hatası" });
+  }
+});
+
 // Basit test endpoint’i
 app.get("/", (req, res) => {
   res.send("✅ Pratique Backend Çalışıyor!");
