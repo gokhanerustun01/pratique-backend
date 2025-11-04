@@ -1,0 +1,32 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             Int             @id @default(autoincrement())
+  telegramId     String          @unique
+  username       String?
+  firstName      String?
+  photoUrl       String?
+  inviteCode     String          @unique
+  invitedBy      String? // davet edenin kodu
+  prtqBalance    Int             @default(0)
+  inviteCount    Int             @default(0)
+  createdAt      DateTime        @default(now())
+  robotPurchases RobotPurchase[] // 👈 ilişkiyi ekledik
+}
+
+model RobotPurchase {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  level     Int
+  amountUSD Int
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
