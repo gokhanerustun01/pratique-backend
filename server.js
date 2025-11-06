@@ -154,6 +154,24 @@ app.get("/user/invites/:telegramId", async (req, res) => {
   }
 });
 
+// 💰 Kullanıcının PRTQ bakiyesini güncelle (App.jsx senkronizasyonu)
+app.post("/user/update-balance", async (req, res) => {
+  try {
+    const { telegramId, balance } = req.body;
+    if (!telegramId) return res.status(400).json({ error: "telegramId eksik" });
+
+    const user = await prisma.user.update({
+      where: { telegramId: String(telegramId) },
+      data: { prtqBalance: balance },
+    });
+
+    res.json({ success: true, balance: user.prtqBalance });
+  } catch (err) {
+    console.error("update-balance error:", err);
+    res.status(500).json({ error: "Sunucu hatası" });
+  }
+});
+
 // 🔹 Test: Veritabanındaki tüm kullanıcıları döner (db bağlantısını test için)
 app.get("/debug/users", async (req, res) => {
   try {
