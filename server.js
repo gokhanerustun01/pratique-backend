@@ -5,6 +5,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import TelegramBot from "node-telegram-bot-api";
 import { PrismaClient } from "@prisma/client";
+import fetch from "node-fetch"; // ✅ NowPayments için eklendi
 
 dotenv.config();
 const app = express();
@@ -169,6 +170,74 @@ app.post("/user/update-balance", async (req, res) => {
   } catch (err) {
     console.error("update-balance error:", err);
     res.status(500).json({ error: "Sunucu hatası" });
+  }
+});
+
+// 💸 NOWPAYMENTS USDT ÖDEME OLUŞTURMA ENDPOINT
+app.post("/create-usdt-payment", async (req, res) => {
+  try {
+    const { userId, level } = req.body;
+    if (!userId || !level)
+      return res.status(400).json({ error: "Eksik parametre" });
+
+    const priceUSD = [0, 50, 100, 150, 200, 250][level];
+    if (!priceUSD)
+      return res.status(400).json({ error: "Geçersiz seviye" });
+
+    const response = await fetch("https://api.nowpayments.io/v1/invoice", {
+      method: "POST",
+      headers: {
+        "x-api-key": process.env.NOWPAYMENTS_API_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        price_amount: priceUSD,
+        price_currency: "usd",
+        pay_currency: "usdttrc20",
+        order_id: `user_${userId}_robot_${level}`,
+        success_url: `${process.env.DOMAIN}/payment-success`,
+        cancel_url: `${process.env.DOMAIN}/payment-cancel`,
+        is_fee_paid_by_user: true,
+      }),
+    });
+
+    const data = await response.json();
+    if (!data.invoice_url) {
+      console.error("NowPayments response:", data);
+      return res.status(500).json({ error: "NowPayments yanıtı hatalı" });
+    }
+
+    res.json({ url: data.invoice_url });
+  } catch (err) {
+    console.error("create-usdt-payment error:", err);
+    res.status(500).json({ error: "Sunucu hatası" });
+  }
+});
+
+// 💬 NOWPAYMENTS WEBHOOK - ödeme tamamlanınca robotu aktif et
+app.post("/webhook/nowpayments", async (req, res) => {
+  try {
+    const { order_id, payment_status } = req.body;
+
+    if (payment_status !== "finished") {
+      return res.status(200).json({ message: "Ödeme tamamlanmadı." });
+    }
+
+    const match = order_id.match(/user_(\d+)_robot_(\d+)/);
+    if (!match) return res.status(400).json({ error: "Geçersiz order_id" });
+
+    const [, userId, level] = match;
+
+    await prisma.user.update({
+      where: { id: Number(userId) },
+      data: { robotLevel: Number(level) },
+    });
+
+    console.log(`✅ Kullanıcı ${userId} için Robot Level ${level} aktif edildi.`);
+    res.sendStatus(200);
+  } catch (err) {
+    console.error("Webhook error:", err);
+    res.status(500).json({ error: "Webhook hatası" });
   }
 });
 
