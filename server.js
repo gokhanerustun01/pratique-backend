@@ -153,6 +153,17 @@ app.get("/user/invites/:telegramId", async (req, res) => {
   }
 });
 
+// 🔹 Test: Veritabanındaki tüm kullanıcıları döner (db bağlantısını test için)
+app.get("/debug/users", async (req, res) => {
+  try {
+    const users = await prisma.user.findMany();
+    res.json({ total: users.length, users });
+  } catch (err) {
+    console.error("debug error:", err);
+    res.status(500).json({ error: "db erişim hatası" });
+  }
+});
+
 // Basit test endpoint’i
 app.get("/", (req, res) => {
   res.send("✅ Pratique Backend Çalışıyor!");
