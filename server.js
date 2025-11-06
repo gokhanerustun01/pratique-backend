@@ -21,7 +21,7 @@ const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 // 🔹 /start komutu - Telegram'dan gelen kullanıcıyı kaydeder
 bot.onText(/\/start(.*)/, async (msg, match) => {
   const chatId = msg.chat.id;
-  const refCode = match[1]?.trim().replace(" ", "") || null;
+  const refCode = match[1]?.trim() || null;
   const user = msg.from;
 
   try {
@@ -43,15 +43,16 @@ bot.onText(/\/start(.*)/, async (msg, match) => {
         },
       });
 
-      // Davet eden varsa davet sayısını arttır
+      // 🔁 Davet eden varsa davet sayısını artır
       if (refCode) {
+        const cleanCode = refCode.trim().toUpperCase();
         const inviter = await prisma.user.findUnique({
-          where: { inviteCode: refCode },
+          where: { inviteCode: cleanCode },
         });
         if (inviter) {
           await prisma.user.update({
             where: { id: inviter.id },
-            data: { inviteCount: inviter.inviteCount + 1 },
+            data: { inviteCount: { increment: 1 } },
           });
         }
       }
@@ -92,15 +93,16 @@ app.post("/user/register", async (req, res) => {
         },
       });
 
-      // Davet eden varsa davet sayısını arttır
+      // 🔁 Davet eden varsa davet sayısını artır
       if (invitedBy) {
+        const cleanCode = invitedBy.trim().toUpperCase();
         const inviter = await prisma.user.findUnique({
-          where: { inviteCode: invitedBy },
+          where: { inviteCode: cleanCode },
         });
         if (inviter) {
           await prisma.user.update({
             where: { id: inviter.id },
-            data: { inviteCount: inviter.inviteCount + 1 },
+            data: { inviteCount: { increment: 1 } },
           });
         }
       }
@@ -138,7 +140,6 @@ app.get("/user/:telegramId", async (req, res) => {
 app.get("/user/invites/:telegramId", async (req, res) => {
   try {
     const { telegramId } = req.params;
-
     const user = await prisma.user.findUnique({
       where: { telegramId: String(telegramId) },
       select: { inviteCount: true },
