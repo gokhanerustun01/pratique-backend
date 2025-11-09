@@ -31,7 +31,6 @@ bot.onText(/\/start(.*)/, async (msg, match) => {
     });
 
     if (!existing) {
-      // Yeni kullanıcı oluştur
       const inviteCode = `INV-${user.id}`;
       await prisma.user.create({
         data: {
@@ -44,7 +43,6 @@ bot.onText(/\/start(.*)/, async (msg, match) => {
         },
       });
 
-      // 🔁 Davet eden varsa davet sayısını artır
       if (refCode) {
         const cleanCode = refCode.trim().toUpperCase();
         const inviter = await prisma.user.findUnique({
@@ -94,7 +92,6 @@ app.post("/user/register", async (req, res) => {
         },
       });
 
-      // 🔁 Davet eden varsa davet sayısını artır
       if (invitedBy) {
         const cleanCode = invitedBy.trim().toUpperCase();
         const inviter = await prisma.user.findUnique({
@@ -108,7 +105,6 @@ app.post("/user/register", async (req, res) => {
         }
       }
     } else {
-      // Mevcut kullanıcıyı güncelle
       user = await prisma.user.update({
         where: { telegramId: String(telegramId) },
         data: { username, firstName, photoUrl },
@@ -122,7 +118,7 @@ app.post("/user/register", async (req, res) => {
   }
 });
 
-// 🔹 Kullanıcı bilgilerini almak için endpoint (isteğe bağlı)
+// 🔹 Kullanıcı bilgilerini almak için endpoint
 app.get("/user/:telegramId", async (req, res) => {
   try {
     const { telegramId } = req.params;
@@ -145,9 +141,7 @@ app.get("/user/invites/:telegramId", async (req, res) => {
       where: { telegramId: String(telegramId) },
       select: { inviteCount: true },
     });
-
     if (!user) return res.status(404).json({ error: "User not found" });
-
     res.json({ inviteCount: user.inviteCount });
   } catch (err) {
     console.error("Invite count error:", err);
@@ -194,7 +188,7 @@ app.post("/create-usdt-payment", async (req, res) => {
         price_amount: priceUSD,
         price_currency: "usd",
         pay_currency: "usdttrc20",
-        order_id: `user_${userId}_robot_${level}`,
+        order_id: `${userId}_${level}`,
         success_url: `${process.env.DOMAIN}/payment-success`,
         cancel_url: `${process.env.DOMAIN}/payment-cancel`,
         is_fee_paid_by_user: true,
@@ -214,26 +208,40 @@ app.post("/create-usdt-payment", async (req, res) => {
   }
 });
 
-// 💬 NOWPAYMENTS WEBHOOK - ödeme tamamlanınca robotu aktif et
-app.post("/webhook/nowpayments", async (req, res) => {
+// 💬 NOWPAYMENTS WEBHOOK — Ödeme tamamlanınca robotu aktif et
+app.post("/nowpayments/webhook", async (req, res) => {
   try {
-    const { order_id, payment_status } = req.body;
+    const { payment_status, order_id } = req.body;
+
+    console.log("📩 Webhook geldi:", req.body);
 
     if (payment_status !== "finished") {
       return res.status(200).json({ message: "Ödeme tamamlanmadı." });
     }
 
-    const match = order_id.match(/user_(\d+)_robot_(\d+)/);
-    if (!match) return res.status(400).json({ error: "Geçersiz order_id" });
+    const match = order_id.match(/^(\d+)_(\d+)$/);
+    if (!match) {
+      console.error("⚠️ Geçersiz order_id:", order_id);
+      return res.status(400).json({ error: "invalid order_id" });
+    }
 
-    const [, userId, level] = match;
+    const [_, userId, level] = match;
+
+    const user = await prisma.user.findUnique({
+      where: { telegramId: String(userId) },
+    });
+
+    if (!user) {
+      console.error("Kullanıcı bulunamadı:", userId);
+      return res.status(404).json({ error: "user not found" });
+    }
 
     await prisma.user.update({
-      where: { id: Number(userId) },
+      where: { telegramId: String(userId) },
       data: { robotLevel: Number(level) },
     });
 
-    console.log(`✅ Kullanıcı ${userId} için Robot Level ${level} aktif edildi.`);
+    console.log(`🤖 Kullanıcı ${userId} için Robot Level ${level} aktif edildi.`);
     res.sendStatus(200);
   } catch (err) {
     console.error("Webhook error:", err);
