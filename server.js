@@ -69,7 +69,7 @@ bot.onText(/\/start(.*)/, async (msg, match) => {
   }
 });
 
-// 🔹 Kullanıcı kayıt / güncelleme endpoint (Frontend Profile.jsx çağırıyor)
+// 🔹 Kullanıcı kayıt / güncelleme endpoint
 app.post("/user/register", async (req, res) => {
   try {
     const { telegramId, username, firstName, photoUrl, invitedBy } = req.body;
@@ -133,22 +133,6 @@ app.get("/user/:telegramId", async (req, res) => {
   }
 });
 
-// 🔹 Davet sayısını dönen endpoint
-app.get("/user/invites/:telegramId", async (req, res) => {
-  try {
-    const { telegramId } = req.params;
-    const user = await prisma.user.findUnique({
-      where: { telegramId: String(telegramId) },
-      select: { inviteCount: true },
-    });
-    if (!user) return res.status(404).json({ error: "User not found" });
-    res.json({ inviteCount: user.inviteCount });
-  } catch (err) {
-    console.error("Invite count error:", err);
-    res.status(500).json({ error: "Sunucu hatası" });
-  }
-});
-
 // 💰 Kullanıcının PRTQ bakiyesini güncelle (App.jsx senkronizasyonu)
 app.post("/user/update-balance", async (req, res) => {
   try {
@@ -167,92 +151,88 @@ app.post("/user/update-balance", async (req, res) => {
   }
 });
 
-// 💸 NOWPAYMENTS USDT ÖDEME OLUŞTURMA ENDPOINT
-app.post("/create-usdt-payment", async (req, res) => {
+// 💸 MANUEL TRC20 ÖDEME BAŞLATMA (Kayıt oluşturur)
+app.post("/manual-trc20/start", async (req, res) => {
   try {
     const { userId, level } = req.body;
-    if (!userId || !level)
-      return res.status(400).json({ error: "Eksik parametre" });
+    if (!userId || !level) return res.status(400).json({ error: "Eksik bilgi" });
 
-    const priceUSD = [0, 50, 100, 150, 200, 250][level];
-    if (!priceUSD)
-      return res.status(400).json({ error: "Geçersiz seviye" });
+    const amountUSD = [0, 50, 100, 150, 200, 250][level];
+    if (!amountUSD) return res.status(400).json({ error: "Geçersiz seviye" });
 
-    const response = await fetch("https://api.nowpayments.io/v1/invoice", {
-      method: "POST",
-      headers: {
-        "x-api-key": process.env.NOWPAYMENTS_API_KEY,
-        "Content-Type": "application/json",
+    const user = await prisma.user.findUnique({ where: { telegramId: String(userId) } });
+    if (!user) return res.status(404).json({ error: "Kullanıcı bulunamadı" });
+
+    const payment = await prisma.manualPayment.create({
+      data: {
+        userId: user.id,
+        level,
+        amountUSD,
+        status: "PENDING",
       },
-      body: JSON.stringify({
-        price_amount: priceUSD,
-        price_currency: "usd",
-        pay_currency: "usdttrc20",
-        order_id: `${userId}_${level}`,
-        success_url: `${process.env.DOMAIN}/payment-success`,
-        cancel_url: `${process.env.DOMAIN}/payment-cancel`,
-        is_fee_paid_by_user: true,
-      }),
     });
 
-    const data = await response.json();
-    if (!data.invoice_url) {
-      console.error("NowPayments response:", data);
-      return res.status(500).json({ error: "NowPayments yanıtı hatalı" });
-    }
-
-    res.json({ url: data.invoice_url });
+    res.json({
+      message: "💸 TRC20 ödeme kaydı oluşturuldu.",
+      wallet: process.env.TRC20_WALLET_ADDRESS,
+      amountUSD,
+      paymentId: payment.id,
+    });
   } catch (err) {
-    console.error("create-usdt-payment error:", err);
+    console.error("manual-trc20/start error:", err);
     res.status(500).json({ error: "Sunucu hatası" });
   }
 });
 
-// 💬 NOWPAYMENTS WEBHOOK — Ödeme tamamlanınca robotu aktif et
-app.post("/nowpayments/webhook", async (req, res) => {
+// 💬 KULLANICI ÖDEME SONRASI HASH GÖNDERİR
+app.post("/manual-trc20/confirm", async (req, res) => {
   try {
-    const { payment_status, order_id } = req.body;
+    const { paymentId, txHash } = req.body;
+    if (!paymentId || !txHash)
+      return res.status(400).json({ error: "Eksik bilgi" });
 
-    console.log("📩 Webhook geldi:", req.body);
-
-    if (payment_status !== "finished") {
-      return res.status(200).json({ message: "Ödeme tamamlanmadı." });
-    }
-
-    const match = order_id.match(/^(\d+)_(\d+)$/);
-    if (!match) {
-      console.error("⚠️ Geçersiz order_id:", order_id);
-      return res.status(400).json({ error: "invalid order_id" });
-    }
-
-    const [_, userId, level] = match;
-
-    const user = await prisma.user.findUnique({
-      where: { telegramId: String(userId) },
+    const payment = await prisma.manualPayment.update({
+      where: { id: paymentId },
+      data: { txHash, status: "PENDING" },
     });
 
-    if (!user) {
-      console.error("Kullanıcı bulunamadı:", userId);
-      return res.status(404).json({ error: "user not found" });
-    }
+    res.json({ message: "✅ İşlem hash'i kaydedildi, onay bekliyor.", payment });
+  } catch (err) {
+    console.error("manual-trc20/confirm error:", err);
+    res.status(500).json({ error: "Sunucu hatası" });
+  }
+});
+
+// 🛠️ ADMIN ONAYI (Manuel kontrol sonrası)
+app.post("/admin/manual-trc20/approve", async (req, res) => {
+  try {
+    const { paymentId } = req.body;
+    if (!paymentId) return res.status(400).json({ error: "Eksik bilgi" });
+
+    const payment = await prisma.manualPayment.update({
+      where: { id: paymentId },
+      data: { status: "APPROVED" },
+      include: { user: true },
+    });
 
     await prisma.user.update({
-      where: { telegramId: String(userId) },
-      data: { robotLevel: Number(level) },
+      where: { id: payment.userId },
+      data: { robotLevel: payment.level },
     });
 
-    console.log(`🤖 Kullanıcı ${userId} için Robot Level ${level} aktif edildi.`);
-    res.sendStatus(200);
+    res.json({ message: `🤖 Kullanıcı ${payment.userId} için Robot Level ${payment.level} aktif edildi.` });
   } catch (err) {
-    console.error("Webhook error:", err);
-    res.status(500).json({ error: "Webhook hatası" });
+    console.error("admin/manual-trc20/approve error:", err);
+    res.status(500).json({ error: "Sunucu hatası" });
   }
 });
 
 // 🔹 Test: Veritabanındaki tüm kullanıcıları döner (db bağlantısını test için)
 app.get("/debug/users", async (req, res) => {
   try {
-    const users = await prisma.user.findMany();
+    const users = await prisma.user.findMany({
+      include: { manualPayments: true },
+    });
     res.json({ total: users.length, users });
   } catch (err) {
     console.error("debug error:", err);

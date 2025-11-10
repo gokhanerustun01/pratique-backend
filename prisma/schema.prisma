@@ -1,4 +1,5 @@
 // prisma/schema.prisma
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,17 +10,20 @@ datasource db {
 }
 
 model User {
-  id             Int             @id @default(autoincrement())
-  telegramId     String          @unique
+  id             Int              @id @default(autoincrement())
+  telegramId     String           @unique
   username       String?
   firstName      String?
   photoUrl       String?
-  inviteCode     String          @unique
-  invitedBy      String? // davet edenin kodu
-  prtqBalance    Int             @default(0)
-  inviteCount    Int             @default(0)
-  createdAt      DateTime        @default(now())
-  robotPurchases RobotPurchase[] // 👈 ilişkiyi ekledik
+  inviteCode     String           @unique
+  invitedBy      String?
+  prtqBalance    Int              @default(0)
+  inviteCount    Int              @default(0)
+  robotLevel     Int              @default(0)     // ✅ Robot seviyesi
+  createdAt      DateTime         @default(now())
+
+  robotPurchases RobotPurchase[]
+  manualPayments ManualPayment[]  // ✅ TRC20 manuel ödemeler ilişkisi
 }
 
 model RobotPurchase {
@@ -29,4 +33,23 @@ model RobotPurchase {
   amountUSD Int
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id])
+}
+
+// ✅ Manuel TRC20 ödeme kayıtları
+model ManualPayment {
+  id         Int            @id @default(autoincrement())
+  userId     Int             // 👈 Int olacak, çünkü User.id Int
+  level      Int
+  amountUSD  Int
+  status     PaymentStatus  @default(PENDING)
+  txHash     String?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  user       User           @relation(fields: [userId], references: [id]) // 👈 ilişki tamam
+}
+
+enum PaymentStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
