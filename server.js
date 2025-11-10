@@ -5,7 +5,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import TelegramBot from "node-telegram-bot-api";
 import { PrismaClient } from "@prisma/client";
-import fetch from "node-fetch"; // ✅ NowPayments için eklendi
+import fetch from "node-fetch";
 
 dotenv.config();
 const app = express();
@@ -16,58 +16,55 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(bodyParser.json());
 
-// Telegram bot başlat
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
+// ✅ Telegram bot (local ortamda çalışır)
+if (!process.env.VERCEL) {
+  const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 
-// 🔹 /start komutu - Telegram'dan gelen kullanıcıyı kaydeder
-bot.onText(/\/start(.*)/, async (msg, match) => {
-  const chatId = msg.chat.id;
-  const refCode = match[1]?.trim() || null;
-  const user = msg.from;
+  bot.onText(/\/start(.*)/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const refCode = match[1]?.trim() || null;
+    const user = msg.from;
 
-  try {
-    let existing = await prisma.user.findUnique({
-      where: { telegramId: String(user.id) },
-    });
-
-    if (!existing) {
-      const inviteCode = `INV-${user.id}`;
-      await prisma.user.create({
-        data: {
-          telegramId: String(user.id),
-          username: user.username || null,
-          firstName: user.first_name || null,
-          photoUrl: user.photo_url || null,
-          inviteCode,
-          invitedBy: refCode || null,
-        },
+    try {
+      let existing = await prisma.user.findUnique({
+        where: { telegramId: String(user.id) },
       });
 
-      if (refCode) {
-        const cleanCode = refCode.trim().toUpperCase();
-        const inviter = await prisma.user.findUnique({
-          where: { inviteCode: cleanCode },
+      if (!existing) {
+        const inviteCode = `INV-${user.id}`;
+        await prisma.user.create({
+          data: {
+            telegramId: String(user.id),
+            username: user.username || null,
+            firstName: user.first_name || null,
+            photoUrl: user.photo_url || null,
+            inviteCode,
+            invitedBy: refCode || null,
+          },
         });
-        if (inviter) {
-          await prisma.user.update({
-            where: { id: inviter.id },
-            data: { inviteCount: { increment: 1 } },
-          });
-        }
-      }
 
-      bot.sendMessage(
-        chatId,
-        `👋 Hoş geldin ${user.first_name || "kullanıcı"}!\n\nHesabın oluşturuldu ✅`
-      );
-    } else {
-      bot.sendMessage(chatId, "✅ Zaten kayıtlısın!");
+        if (refCode) {
+          const inviter = await prisma.user.findUnique({
+            where: { inviteCode: refCode.trim().toUpperCase() },
+          });
+          if (inviter) {
+            await prisma.user.update({
+              where: { id: inviter.id },
+              data: { inviteCount: { increment: 1 } },
+            });
+          }
+        }
+
+        bot.sendMessage(chatId, `👋 Hoş geldin ${user.first_name || "kullanıcı"}! Hesabın oluşturuldu ✅`);
+      } else {
+        bot.sendMessage(chatId, "✅ Zaten kayıtlısın!");
+      }
+    } catch (err) {
+      console.error("Kullanıcı kaydında hata:", err);
+      bot.sendMessage(chatId, "⚠️ Bir hata oluştu, sonra tekrar dene.");
     }
-  } catch (err) {
-    console.error("Kullanıcı kaydında hata:", err);
-    bot.sendMessage(chatId, "⚠️ Bir hata oluştu, sonra tekrar dene.");
-  }
-});
+  });
+}
 
 // 🔹 Kullanıcı kayıt / güncelleme endpoint
 app.post("/user/register", async (req, res) => {
@@ -75,9 +72,7 @@ app.post("/user/register", async (req, res) => {
     const { telegramId, username, firstName, photoUrl, invitedBy } = req.body;
     if (!telegramId) return res.status(400).json({ error: "telegramId eksik" });
 
-    let user = await prisma.user.findUnique({
-      where: { telegramId: String(telegramId) },
-    });
+    let user = await prisma.user.findUnique({ where: { telegramId: String(telegramId) } });
 
     if (!user) {
       const inviteCode = `INV-${telegramId}`;
@@ -93,9 +88,8 @@ app.post("/user/register", async (req, res) => {
       });
 
       if (invitedBy) {
-        const cleanCode = invitedBy.trim().toUpperCase();
         const inviter = await prisma.user.findUnique({
-          where: { inviteCode: cleanCode },
+          where: { inviteCode: invitedBy.trim().toUpperCase() },
         });
         if (inviter) {
           await prisma.user.update({
@@ -121,9 +115,8 @@ app.post("/user/register", async (req, res) => {
 // 🔹 Kullanıcı bilgilerini almak için endpoint
 app.get("/user/:telegramId", async (req, res) => {
   try {
-    const { telegramId } = req.params;
     const user = await prisma.user.findUnique({
-      where: { telegramId: String(telegramId) },
+      where: { telegramId: String(req.params.telegramId) },
     });
     if (!user) return res.status(404).json({ error: "Kullanıcı bulunamadı" });
     res.json(user);
@@ -133,7 +126,7 @@ app.get("/user/:telegramId", async (req, res) => {
   }
 });
 
-// 💰 Kullanıcının PRTQ bakiyesini güncelle (App.jsx senkronizasyonu)
+// 💰 Kullanıcının PRTQ bakiyesini güncelle
 app.post("/user/update-balance", async (req, res) => {
   try {
     const { telegramId, balance } = req.body;
@@ -151,7 +144,7 @@ app.post("/user/update-balance", async (req, res) => {
   }
 });
 
-// 💸 MANUEL TRC20 ÖDEME BAŞLATMA (Kayıt oluşturur)
+// 💸 MANUEL TRC20 ÖDEME BAŞLAT
 app.post("/manual-trc20/start", async (req, res) => {
   try {
     const { userId, level } = req.body;
@@ -164,12 +157,7 @@ app.post("/manual-trc20/start", async (req, res) => {
     if (!user) return res.status(404).json({ error: "Kullanıcı bulunamadı" });
 
     const payment = await prisma.manualPayment.create({
-      data: {
-        userId: user.id,
-        level,
-        amountUSD,
-        status: "PENDING",
-      },
+      data: { userId: user.id, level, amountUSD, status: "PENDING" },
     });
 
     res.json({
@@ -184,12 +172,11 @@ app.post("/manual-trc20/start", async (req, res) => {
   }
 });
 
-// 💬 KULLANICI ÖDEME SONRASI HASH GÖNDERİR
+// 💬 KULLANICI HASH GÖNDERİR
 app.post("/manual-trc20/confirm", async (req, res) => {
   try {
     const { paymentId, txHash } = req.body;
-    if (!paymentId || !txHash)
-      return res.status(400).json({ error: "Eksik bilgi" });
+    if (!paymentId || !txHash) return res.status(400).json({ error: "Eksik bilgi" });
 
     const payment = await prisma.manualPayment.update({
       where: { id: paymentId },
@@ -203,7 +190,7 @@ app.post("/manual-trc20/confirm", async (req, res) => {
   }
 });
 
-// 🛠️ ADMIN ONAYI (Manuel kontrol sonrası)
+// 🛠️ ADMIN ONAYI
 app.post("/admin/manual-trc20/approve", async (req, res) => {
   try {
     const { paymentId } = req.body;
@@ -227,12 +214,10 @@ app.post("/admin/manual-trc20/approve", async (req, res) => {
   }
 });
 
-// 🔹 Test: Veritabanındaki tüm kullanıcıları döner (db bağlantısını test için)
+// Debug endpoint
 app.get("/debug/users", async (req, res) => {
   try {
-    const users = await prisma.user.findMany({
-      include: { manualPayments: true },
-    });
+    const users = await prisma.user.findMany({ include: { manualPayments: true } });
     res.json({ total: users.length, users });
   } catch (err) {
     console.error("debug error:", err);
@@ -240,12 +225,16 @@ app.get("/debug/users", async (req, res) => {
   }
 });
 
-// Basit test endpoint’i
+// Basit test
 app.get("/", (req, res) => {
   res.send("✅ Pratique Backend Çalışıyor!");
 });
 
-// Sunucu başlat
-app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
-});
+// ✅ Vercel uyumlu export
+if (process.env.VERCEL) {
+  console.log("🚀 Running on Vercel serverless mode");
+} else {
+  app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
+}
+
+export default app;
