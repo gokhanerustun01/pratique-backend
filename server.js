@@ -4,20 +4,27 @@ import bodyParser from "body-parser";
 import cors from "cors";
 import dotenv from "dotenv";
 import TelegramBot from "node-telegram-bot-api";
-import { PrismaClient } from "@prisma/client";
 import fetch from "node-fetch";
+import pkg from "@prisma/client";
+const { PrismaClient } = pkg;
 
 dotenv.config();
 const app = express();
-const prisma = new PrismaClient();
+
+// ✅ Prisma tekil instance (Vercel deploy’da hot reload hatasız)
+const globalForPrisma = globalThis;
+const prisma = globalForPrisma.prisma || new PrismaClient();
+if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+
 const PORT = process.env.PORT || 3000;
 
-// Middleware
 app.use(cors());
 app.use(bodyParser.json());
 
-// ✅ Telegram bot (local ortamda çalışır)
-if (!process.env.VERCEL) {
+/*───────────────────────────────────────────────
+ 🔹 Telegram bot (sadece local ortamda aktif)
+───────────────────────────────────────────────*/
+if (!process.env.VERCEL && process.env.TELEGRAM_BOT_TOKEN) {
   const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 
   bot.onText(/\/start(.*)/, async (msg, match) => {
@@ -66,7 +73,9 @@ if (!process.env.VERCEL) {
   });
 }
 
-// 🔹 Kullanıcı kayıt / güncelleme endpoint
+/*───────────────────────────────────────────────
+ 🔹 Kullanıcı işlemleri
+───────────────────────────────────────────────*/
 app.post("/user/register", async (req, res) => {
   try {
     const { telegramId, username, firstName, photoUrl, invitedBy } = req.body;
@@ -112,7 +121,6 @@ app.post("/user/register", async (req, res) => {
   }
 });
 
-// 🔹 Kullanıcı bilgilerini almak için endpoint
 app.get("/user/:telegramId", async (req, res) => {
   try {
     const user = await prisma.user.findUnique({
@@ -126,7 +134,6 @@ app.get("/user/:telegramId", async (req, res) => {
   }
 });
 
-// 💰 Kullanıcının PRTQ bakiyesini güncelle
 app.post("/user/update-balance", async (req, res) => {
   try {
     const { telegramId, balance } = req.body;
@@ -144,7 +151,9 @@ app.post("/user/update-balance", async (req, res) => {
   }
 });
 
-// 💸 MANUEL TRC20 ÖDEME BAŞLAT
+/*───────────────────────────────────────────────
+ 💸 MANUEL TRC20 ÖDEMELER
+───────────────────────────────────────────────*/
 app.post("/manual-trc20/start", async (req, res) => {
   try {
     const { userId, level } = req.body;
@@ -162,7 +171,7 @@ app.post("/manual-trc20/start", async (req, res) => {
 
     res.json({
       message: "💸 TRC20 ödeme kaydı oluşturuldu.",
-      wallet: process.env.TRC20_WALLET_ADDRESS,
+      wallet: process.env.TRC20_WALLET_ADDRESS || "TRC20_CUZDAN_ADRESİN",
       amountUSD,
       paymentId: payment.id,
     });
@@ -172,7 +181,6 @@ app.post("/manual-trc20/start", async (req, res) => {
   }
 });
 
-// 💬 KULLANICI HASH GÖNDERİR
 app.post("/manual-trc20/confirm", async (req, res) => {
   try {
     const { paymentId, txHash } = req.body;
@@ -190,7 +198,6 @@ app.post("/manual-trc20/confirm", async (req, res) => {
   }
 });
 
-// 🛠️ ADMIN ONAYI
 app.post("/admin/manual-trc20/approve", async (req, res) => {
   try {
     const { paymentId } = req.body;
@@ -214,7 +221,9 @@ app.post("/admin/manual-trc20/approve", async (req, res) => {
   }
 });
 
-// Debug endpoint
+/*───────────────────────────────────────────────
+ 🔹 Debug endpoint
+───────────────────────────────────────────────*/
 app.get("/debug/users", async (req, res) => {
   try {
     const users = await prisma.user.findMany({ include: { manualPayments: true } });
@@ -225,12 +234,16 @@ app.get("/debug/users", async (req, res) => {
   }
 });
 
-// Basit test
+/*───────────────────────────────────────────────
+ 🔹 Test
+───────────────────────────────────────────────*/
 app.get("/", (req, res) => {
   res.send("✅ Pratique Backend Çalışıyor!");
 });
 
-// ✅ Vercel uyumlu export
+/*───────────────────────────────────────────────
+ 🔹 Vercel uyumluluk
+───────────────────────────────────────────────*/
 if (process.env.VERCEL) {
   console.log("🚀 Running on Vercel serverless mode");
 } else {
