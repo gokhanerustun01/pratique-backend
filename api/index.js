@@ -41,7 +41,7 @@ app.post("/manual-trc20/start", async (req, res) => {
 
 // ✅ Kullanıcıları listeleme (debug)
 app.get("/debug/users", async (req, res) => {
-  const ADMIN_SECRET = process.env.ADMIN_SECRET || ""; // opsiyonel koruma
+  const ADMIN_SECRET = process.env.ADMIN_SECRET || "";
   if (ADMIN_SECRET) {
     if ((req.query.key || "") !== ADMIN_SECRET) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -54,13 +54,14 @@ app.get("/debug/users", async (req, res) => {
         id: true,
         telegramId: true,
         username: true,
-        balance: true,
-        referrerId: true,
+        prtqBalance: true, // ✅ düzeltildi (balance → prtqBalance)
+        invitedBy: true,
+        inviteCount: true,
+        robotLevel: true,
         createdAt: true,
-        updatedAt: true,
       },
       orderBy: { id: "desc" },
-      take: 200, // çok fazla olmasın
+      take: 200,
     });
     res.json(users);
   } catch (err) {
