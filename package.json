@@ -8,13 +8,15 @@
     "dev": "nodemon server.js",
     "start": "node server.js",
     "prisma:dev": "prisma migrate dev --name init",
-    "prisma:gen": "prisma generate"
+    "prisma:gen": "prisma generate",
+    "postinstall": "prisma generate",
+    "vercel-build": "prisma generate"
   },
   "keywords": [],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@prisma/client": "^6.18.0",
+    "@prisma/client": "^6.19.0",
     "body-parser": "^2.2.0",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
@@ -24,6 +26,6 @@
   },
   "devDependencies": {
     "nodemon": "^3.1.0",
-    "prisma": "^6.0.0"
+    "prisma": "^6.19.0"
   }
 }
