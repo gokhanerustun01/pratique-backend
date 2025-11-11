@@ -67,6 +67,30 @@ app.post("/user/update-balance", async (req, res) => {
   }
 });
 
+// ✅ Kullanıcının davet sayısını döndürme (Profile.jsx için)
+app.get("/user/invites/:telegramId", async (req, res) => {
+  try {
+    const { telegramId } = req.params;
+    if (!telegramId) {
+      return res.status(400).json({ error: "Eksik telegramId" });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { telegramId: String(telegramId) },
+      select: { inviteCount: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: "Kullanıcı bulunamadı" });
+    }
+
+    res.json({ inviteCount: user.inviteCount });
+  } catch (err) {
+    console.error("inviteCount error:", err);
+    res.status(500).json({ error: "Sunucu hatası" });
+  }
+});
+
 // ✅ Kullanıcıları listeleme (debug)
 app.get("/debug/users", async (req, res) => {
   const ADMIN_SECRET = process.env.ADMIN_SECRET || "";
