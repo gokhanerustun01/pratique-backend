@@ -11,6 +11,7 @@ app.use(bodyParser.json());
 
 const prisma = new PrismaClient();
 
+// ✅ TRC20 Manuel ödeme başlangıcı
 app.post("/manual-trc20/start", async (req, res) => {
   try {
     const { userId, level } = req.body;
@@ -38,6 +39,37 @@ app.post("/manual-trc20/start", async (req, res) => {
   }
 });
 
+// ✅ Kullanıcıları listeleme (debug)
+app.get("/debug/users", async (req, res) => {
+  const ADMIN_SECRET = process.env.ADMIN_SECRET || ""; // opsiyonel koruma
+  if (ADMIN_SECRET) {
+    if ((req.query.key || "") !== ADMIN_SECRET) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+  }
+
+  try {
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        telegramId: true,
+        username: true,
+        balance: true,
+        referrerId: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      orderBy: { id: "desc" },
+      take: 200, // çok fazla olmasın
+    });
+    res.json(users);
+  } catch (err) {
+    console.error("Kullanıcıları çekerken hata:", err);
+    res.status(500).json({ error: "Sunucu hatası", detail: String(err?.message || err) });
+  }
+});
+
+// ✅ Ana kontrol
 app.get("/", (req, res) => {
   res.send("✅ TRC20 Manual Payment API Çalışıyor!");
 });
