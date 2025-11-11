@@ -63,7 +63,9 @@ app.get("/debug/users", async (req, res) => {
       orderBy: { id: "desc" },
       take: 200,
     });
-    res.json(users);
+
+    // ⚡ Leaderboard için beklenen format
+    res.json({ users });
   } catch (err) {
     console.error("Kullanıcıları çekerken hata:", err);
     res.status(500).json({ error: "Sunucu hatası", detail: String(err?.message || err) });
