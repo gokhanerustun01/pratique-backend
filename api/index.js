@@ -39,6 +39,34 @@ app.post("/manual-trc20/start", async (req, res) => {
   }
 });
 
+// ✅ Kullanıcıların PRTQ bakiyesini güncelleme
+app.post("/user/update-balance", async (req, res) => {
+  try {
+    const { telegramId, balance } = req.body;
+    if (!telegramId || typeof balance !== "number") {
+      return res.status(400).json({ error: "Eksik veya geçersiz veri" });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { telegramId: String(telegramId) },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: "Kullanıcı bulunamadı" });
+    }
+
+    await prisma.user.update({
+      where: { telegramId: String(telegramId) },
+      data: { prtqBalance: balance },
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("update-balance error:", err);
+    res.status(500).json({ error: "Sunucu hatası" });
+  }
+});
+
 // ✅ Kullanıcıları listeleme (debug)
 app.get("/debug/users", async (req, res) => {
   const ADMIN_SECRET = process.env.ADMIN_SECRET || "";
