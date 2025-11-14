@@ -200,7 +200,12 @@ app.post("/manual-trc20/confirm", async (req, res) => {
 
 app.post("/admin/manual-trc20/approve", async (req, res) => {
   try {
-    const { paymentId } = req.body;
+    const { paymentId, key } = req.body;
+
+    if (!key || key !== process.env.ADMIN_SECRET) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
     if (!paymentId) return res.status(400).json({ error: "Eksik bilgi" });
 
     const payment = await prisma.manualPayment.update({
@@ -217,6 +222,63 @@ app.post("/admin/manual-trc20/approve", async (req, res) => {
     res.json({ message: `🤖 Kullanıcı ${payment.userId} için Robot Level ${payment.level} aktif edildi.` });
   } catch (err) {
     console.error("admin/manual-trc20/approve error:", err);
+    res.status(500).json({ error: "Sunucu hatası" });
+  }
+});
+
+/*───────────────────────────────────────────────
+ 🔹 Admin – Ödeme listeleme
+───────────────────────────────────────────────*/
+app.get("/admin/payments", async (req, res) => {
+  try {
+    const { key, status } = req.query;
+    if (!key || key !== process.env.ADMIN_SECRET) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const payments = await prisma.manualPayment.findMany({
+      where: status ? { status } : {},
+      orderBy: { id: "desc" },
+      include: {
+        user: {
+          select: {
+            id: true,
+            telegramId: true,
+            username: true,
+            robotLevel: true,
+          }
+        }
+      }
+    });
+
+    res.json({ payments });
+  } catch (err) {
+    console.error("admin/payments error:", err);
+    res.status(500).json({ error: "Sunucu hatası" });
+  }
+});
+
+/*───────────────────────────────────────────────
+ 🔹 Admin – Ödeme RED
+───────────────────────────────────────────────*/
+app.post("/admin/manual-trc20/reject", async (req, res) => {
+  try {
+    const { paymentId, key } = req.body;
+
+    if (!key || key !== process.env.ADMIN_SECRET) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    if (!paymentId) return res.status(400).json({ error: "Eksik bilgi" });
+
+    const payment = await prisma.manualPayment.update({
+      where: { id: paymentId },
+      data: { status: "REJECTED" }
+    });
+
+    res.json({ message: "❌ Ödeme reddedildi.", payment });
+  } catch (err) {
+    console.error("reject error:", err);
     res.status(500).json({ error: "Sunucu hatası" });
   }
 });
