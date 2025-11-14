@@ -11,6 +11,21 @@ app.use(bodyParser.json());
 
 const prisma = new PrismaClient();
 
+// ⬇⬇⬇ ADMIN ŞİFRE KONTROLÜ BURADA (YENİ EKLEME) ⬇⬇⬇
+const ADMIN_SECRET = process.env.ADMIN_SECRET || "";
+
+const requireAdmin = (req, res, next) => {
+  const key = req.query.key || req.body?.key;
+
+  if (!key || key !== ADMIN_SECRET) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  next();
+};
+// ⬆⬆⬆ ADMIN KONTROLÜ BURADA (YENİ EKLEME) ⬆⬆⬆
+
+
 // ✅ TRC20 Manuel ödeme başlangıcı
 app.post("/manual-trc20/start", async (req, res) => {
   try {
@@ -38,6 +53,7 @@ app.post("/manual-trc20/start", async (req, res) => {
     res.status(500).json({ error: "Sunucu hatası" });
   }
 });
+
 
 // ✅ Kullanıcıların PRTQ bakiyesini güncelleme
 app.post("/user/update-balance", async (req, res) => {
@@ -67,6 +83,7 @@ app.post("/user/update-balance", async (req, res) => {
   }
 });
 
+
 // ✅ Kullanıcının davet sayısını döndürme (Profile.jsx için)
 app.get("/user/invites/:telegramId", async (req, res) => {
   try {
@@ -91,6 +108,7 @@ app.get("/user/invites/:telegramId", async (req, res) => {
   }
 });
 
+
 // ✅ Kullanıcıları listeleme (debug)
 app.get("/debug/users", async (req, res) => {
   const ADMIN_SECRET = process.env.ADMIN_SECRET || "";
@@ -106,7 +124,7 @@ app.get("/debug/users", async (req, res) => {
         id: true,
         telegramId: true,
         username: true,
-        prtqBalance: true, // ✅ düzeltildi (balance → prtqBalance)
+        prtqBalance: true,
         invitedBy: true,
         inviteCount: true,
         robotLevel: true,
@@ -116,13 +134,89 @@ app.get("/debug/users", async (req, res) => {
       take: 200,
     });
 
-    // ⚡ Leaderboard için beklenen format
     res.json({ users });
   } catch (err) {
     console.error("Kullanıcıları çekerken hata:", err);
     res.status(500).json({ error: "Sunucu hatası", detail: String(err?.message || err) });
   }
 });
+
+
+// 🔐 Admin: TRC20 manuel ödemeleri listele (ADIM 3)
+app.get("/admin/manual-trc20/list", requireAdmin, async (req, res) => {
+  try {
+    const payments = await prisma.manualPayment.findMany({
+      include: {
+        user: {
+          select: {
+            id: true,
+            telegramId: true,
+            username: true,
+            prtqBalance: true,
+            robotLevel: true,
+            inviteCount: true,
+          },
+        },
+      },
+      orderBy: { id: "desc" },
+      take: 200,
+    });
+
+    res.json({ payments });
+  } catch (err) {
+    console.error("admin list error:", err);
+    res.status(500).json({ error: "Sunucu hatası" });
+  }
+});
+
+
+// 🔐 Admin: TRC20 ödemeyi ONAYLA (ADIM 4)
+app.post("/admin/manual-trc20/approve", requireAdmin, async (req, res) => {
+  try {
+    const { paymentId } = req.body;
+    if (!paymentId) return res.status(400).json({ error: "Eksik bilgi" });
+
+    const payment = await prisma.manualPayment.update({
+      where: { id: paymentId },
+      data: { status: "APPROVED" },
+      include: { user: true },
+    });
+
+    await prisma.user.update({
+      where: { id: payment.userId },
+      data: { robotLevel: payment.level },
+    });
+
+    res.json({
+      message: `🤖 Kullanıcı ${payment.userId} için Robot Level ${payment.level} aktif edildi.`,
+    });
+  } catch (err) {
+    console.error("admin/manual-trc20/approve error:", err);
+    res.status(500).json({ error: "Sunucu hatası" });
+  }
+});
+
+
+// 🔐 Admin: TRC20 ödemeyi REDDET (ADIM 5)
+app.post("/admin/manual-trc20/reject", requireAdmin, async (req, res) => {
+  try {
+    const { paymentId } = req.body;
+    if (!paymentId) return res.status(400).json({ error: "Eksik bilgi" });
+
+    await prisma.manualPayment.update({
+      where: { id: paymentId },
+      data: { status: "REJECTED" },
+    });
+
+    res.json({
+      message: `❌ Payment #${paymentId} reddedildi.`,
+    });
+  } catch (err) {
+    console.error("admin/manual-trc20/reject error:", err);
+    res.status(500).json({ error: "Sunucu hatası" });
+  }
+});
+
 
 // ✅ Ana kontrol
 app.get("/", (req, res) => {
