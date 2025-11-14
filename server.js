@@ -11,7 +11,7 @@ const { PrismaClient } = pkg;
 dotenv.config();
 const app = express();
 
-// ✅ Prisma tekil instance (Vercel deploy’da hot reload hatasız)
+// Prisma instance
 const globalForPrisma = globalThis;
 const prisma = globalForPrisma.prisma || new PrismaClient();
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
@@ -22,7 +22,7 @@ app.use(cors());
 app.use(bodyParser.json());
 
 /*───────────────────────────────────────────────
- 🔹 Telegram bot (sadece local ortamda aktif)
+ 🔹 Telegram bot (LOCAL)
 ───────────────────────────────────────────────*/
 if (!process.env.VERCEL && process.env.TELEGRAM_BOT_TOKEN) {
   const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
@@ -62,13 +62,13 @@ if (!process.env.VERCEL && process.env.TELEGRAM_BOT_TOKEN) {
           }
         }
 
-        bot.sendMessage(chatId, `👋 Hoş geldin ${user.first_name || "kullanıcı"}! Hesabın oluşturuldu ✅`);
+        bot.sendMessage(chatId, `👋 Hoş geldin ${user.first_name || "kullanıcı"}!`);
       } else {
         bot.sendMessage(chatId, "✅ Zaten kayıtlısın!");
       }
     } catch (err) {
       console.error("Kullanıcı kaydında hata:", err);
-      bot.sendMessage(chatId, "⚠️ Bir hata oluştu, sonra tekrar dene.");
+      bot.sendMessage(chatId, "⚠️ Bir hata oluştu.");
     }
   });
 }
@@ -126,7 +126,7 @@ app.get("/user/:telegramId", async (req, res) => {
     const user = await prisma.user.findUnique({
       where: { telegramId: String(req.params.telegramId) },
     });
-    if (!user) return res.status(404).json({ error: "Kullanıcı bulunamadı" });
+    if (!user) return res.status(404).json({ error: "Kullanıcı yok" });
     res.json(user);
   } catch (err) {
     console.error("user fetch error:", err);
@@ -139,12 +139,12 @@ app.post("/user/update-balance", async (req, res) => {
     const { telegramId, balance } = req.body;
     if (!telegramId) return res.status(400).json({ error: "telegramId eksik" });
 
-    const user = await prisma.user.update({
+    const updated = await prisma.user.update({
       where: { telegramId: String(telegramId) },
       data: { prtqBalance: balance },
     });
 
-    res.json({ success: true, balance: user.prtqBalance });
+    res.json({ success: true, balance: updated.prtqBalance });
   } catch (err) {
     console.error("update-balance error:", err);
     res.status(500).json({ error: "Sunucu hatası" });
@@ -152,7 +152,7 @@ app.post("/user/update-balance", async (req, res) => {
 });
 
 /*───────────────────────────────────────────────
- 💸 MANUEL TRC20 ÖDEMELER
+ 💸 MANUEL ÖDEME – BAŞLAT
 ───────────────────────────────────────────────*/
 app.post("/manual-trc20/start", async (req, res) => {
   try {
@@ -160,9 +160,11 @@ app.post("/manual-trc20/start", async (req, res) => {
     if (!userId || !level) return res.status(400).json({ error: "Eksik bilgi" });
 
     const amountUSD = [0, 50, 100, 150, 200, 250][level];
-    if (!amountUSD) return res.status(400).json({ error: "Geçersiz seviye" });
+    if (!amountUSD) return res.status(400).json({ error: "Geçersiz level" });
 
-    const user = await prisma.user.findUnique({ where: { telegramId: String(userId) } });
+    const user = await prisma.user.findUnique({
+      where: { telegramId: String(userId) },
+    });
     if (!user) return res.status(404).json({ error: "Kullanıcı bulunamadı" });
 
     const payment = await prisma.manualPayment.create({
@@ -170,17 +172,20 @@ app.post("/manual-trc20/start", async (req, res) => {
     });
 
     res.json({
-      message: "💸 TRC20 ödeme kaydı oluşturuldu.",
-      wallet: process.env.TRC20_WALLET_ADDRESS || "TRC20_CUZDAN_ADRESİN",
+      message: "💸 Ödeme kaydı oluşturuldu.",
+      wallet: process.env.TRC20_WALLET_ADDRESS,
       amountUSD,
       paymentId: payment.id,
     });
   } catch (err) {
-    console.error("manual-trc20/start error:", err);
+    console.error("manual start hata:", err);
     res.status(500).json({ error: "Sunucu hatası" });
   }
 });
 
+/*───────────────────────────────────────────────
+ 💸 MANUEL ÖDEME – HASH KAYDET
+───────────────────────────────────────────────*/
 app.post("/manual-trc20/confirm", async (req, res) => {
   try {
     const { paymentId, txHash } = req.body;
@@ -191,13 +196,47 @@ app.post("/manual-trc20/confirm", async (req, res) => {
       data: { txHash, status: "PENDING" },
     });
 
-    res.json({ message: "✅ İşlem hash'i kaydedildi, onay bekliyor.", payment });
+    res.json({ message: "Hash kaydedildi.", payment });
   } catch (err) {
-    console.error("manual-trc20/confirm error:", err);
+    console.error("confirm error:", err);
     res.status(500).json({ error: "Sunucu hatası" });
   }
 });
 
+/*───────────────────────────────────────────────
+ 🔹 ADMIN – ÖDEME LİSTELEME (GERÇEK ENDPOINT)
+───────────────────────────────────────────────*/
+app.get("/admin/manual-trc20/list", async (req, res) => {
+  try {
+    const { key } = req.query;
+    if (!key || key !== process.env.ADMIN_SECRET) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const payments = await prisma.manualPayment.findMany({
+      orderBy: { id: "desc" },
+      include: {
+        user: {
+          select: {
+            id: true,
+            telegramId: true,
+            username: true,
+            robotLevel: true,
+          },
+        },
+      },
+    });
+
+    res.json({ payments });
+  } catch (err) {
+    console.error("admin list error:", err);
+    res.status(500).json({ error: "Sunucu hatası" });
+  }
+});
+
+/*───────────────────────────────────────────────
+ 🔹 ADMIN – ONAYLA
+───────────────────────────────────────────────*/
 app.post("/admin/manual-trc20/approve", async (req, res) => {
   try {
     const { paymentId, key } = req.body;
@@ -205,8 +244,6 @@ app.post("/admin/manual-trc20/approve", async (req, res) => {
     if (!key || key !== process.env.ADMIN_SECRET) {
       return res.status(401).json({ error: "Unauthorized" });
     }
-
-    if (!paymentId) return res.status(400).json({ error: "Eksik bilgi" });
 
     const payment = await prisma.manualPayment.update({
       where: { id: paymentId },
@@ -219,47 +256,15 @@ app.post("/admin/manual-trc20/approve", async (req, res) => {
       data: { robotLevel: payment.level },
     });
 
-    res.json({ message: `🤖 Kullanıcı ${payment.userId} için Robot Level ${payment.level} aktif edildi.` });
+    res.json({ message: "Robot level aktif edildi.", payment });
   } catch (err) {
-    console.error("admin/manual-trc20/approve error:", err);
+    console.error("approve error:", err);
     res.status(500).json({ error: "Sunucu hatası" });
   }
 });
 
 /*───────────────────────────────────────────────
- 🔹 Admin – Ödeme listeleme
-───────────────────────────────────────────────*/
-app.get("/admin/payments", async (req, res) => {
-  try {
-    const { key, status } = req.query;
-    if (!key || key !== process.env.ADMIN_SECRET) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const payments = await prisma.manualPayment.findMany({
-      where: status ? { status } : {},
-      orderBy: { id: "desc" },
-      include: {
-        user: {
-          select: {
-            id: true,
-            telegramId: true,
-            username: true,
-            robotLevel: true,
-          }
-        }
-      }
-    });
-
-    res.json({ payments });
-  } catch (err) {
-    console.error("admin/payments error:", err);
-    res.status(500).json({ error: "Sunucu hatası" });
-  }
-});
-
-/*───────────────────────────────────────────────
- 🔹 Admin – Ödeme RED
+ 🔹 ADMIN – REDDET
 ───────────────────────────────────────────────*/
 app.post("/admin/manual-trc20/reject", async (req, res) => {
   try {
@@ -269,14 +274,12 @@ app.post("/admin/manual-trc20/reject", async (req, res) => {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    if (!paymentId) return res.status(400).json({ error: "Eksik bilgi" });
-
     const payment = await prisma.manualPayment.update({
       where: { id: paymentId },
-      data: { status: "REJECTED" }
+      data: { status: "REJECTED" },
     });
 
-    res.json({ message: "❌ Ödeme reddedildi.", payment });
+    res.json({ message: "Ödeme reddedildi.", payment });
   } catch (err) {
     console.error("reject error:", err);
     res.status(500).json({ error: "Sunucu hatası" });
@@ -288,7 +291,9 @@ app.post("/admin/manual-trc20/reject", async (req, res) => {
 ───────────────────────────────────────────────*/
 app.get("/debug/users", async (req, res) => {
   try {
-    const users = await prisma.user.findMany({ include: { manualPayments: true } });
+    const users = await prisma.user.findMany({
+      include: { manualPayments: true },
+    });
     res.json({ total: users.length, users });
   } catch (err) {
     console.error("debug error:", err);
@@ -304,12 +309,12 @@ app.get("/", (req, res) => {
 });
 
 /*───────────────────────────────────────────────
- 🔹 Vercel uyumluluk
+ 🔹 Vercel Mode
 ───────────────────────────────────────────────*/
 if (process.env.VERCEL) {
-  console.log("🚀 Running on Vercel serverless mode");
+  console.log("🚀 Vercel serverless mode");
 } else {
-  app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
+  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 }
 
 export default app;
