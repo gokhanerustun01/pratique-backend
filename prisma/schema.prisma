@@ -45,11 +45,12 @@ model ManualPayment {
   txHash     String?
   createdAt  DateTime       @default(now())
   updatedAt  DateTime       @updatedAt
-  user       User           @relation(fields: [userId], references: [id]) // 👈 ilişki tamam
+  user       User           @relation(fields: [userId], references: [id])
 }
 
 enum PaymentStatus {
   PENDING
+  WAITING_ADMIN   // 👈 EKLENEN SATIR — TX Hash gönderildi, admin bekliyor
   APPROVED
   REJECTED
 }

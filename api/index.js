@@ -218,6 +218,40 @@ app.post("/admin/manual-trc20/reject", requireAdmin, async (req, res) => {
 });
 
 
+// 🔐 Kullanıcı TX HASH gönderme (YENİ EKLENDİ)
+app.post("/manual-trc20/submit-hash", async (req, res) => {
+  try {
+    const { paymentId, txHash } = req.body;
+
+    if (!paymentId || !txHash) {
+      return res.status(400).json({ error: "Eksik bilgi (paymentId veya txHash yok)" });
+    }
+
+    const payment = await prisma.manualPayment.findUnique({
+      where: { id: paymentId },
+    });
+
+    if (!payment) {
+      return res.status(404).json({ error: "Payment bulunamadı" });
+    }
+
+    await prisma.manualPayment.update({
+      where: { id: paymentId },
+      data: { txHash: txHash, status: "WAITING_ADMIN" },
+    });
+
+    res.json({
+      success: true,
+      message: "TX Hash başarıyla gönderildi. Admin onaylayacak.",
+    });
+
+  } catch (err) {
+    console.error("submit-hash error:", err);
+    res.status(500).json({ error: "Sunucu hatası" });
+  }
+});
+
+
 // ✅ Ana kontrol
 app.get("/", (req, res) => {
   res.send("✅ TRC20 Manual Payment API Çalışıyor!");
