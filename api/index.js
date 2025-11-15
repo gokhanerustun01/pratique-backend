@@ -55,6 +55,37 @@ app.post("/manual-trc20/start", async (req, res) => {
 });
 
 
+// 🔄 Kullanıcı senkronizasyonu (Otomatik robot güncellemesi için)
+app.post("/user/sync", async (req, res) => {
+  try {
+    const { telegramId } = req.body;
+    if (!telegramId) {
+      return res.status(400).json({ error: "Eksik telegramId" });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { telegramId: String(telegramId) },
+      select: {
+        prtqBalance: true,
+        robotLevel: true,
+        inviteCount: true,
+        username: true,
+        createdAt: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: "Kullanıcı bulunamadı" });
+    }
+
+    res.json({ success: true, user });
+  } catch (err) {
+    console.error("user/sync error:", err);
+    res.status(500).json({ error: "Sunucu hatası" });
+  }
+});
+
+
 // ✅ Kullanıcıların PRTQ bakiyesini güncelleme
 app.post("/user/update-balance", async (req, res) => {
   try {
