@@ -26,7 +26,149 @@ const requireAdmin = (req, res, next) => {
 // ⬆⬆⬆ ADMIN KONTROLÜ BURADA (YENİ EKLEME) ⬆⬆⬆
 
 
-// ✅ TRC20 Manuel ödeme başlangıcı
+/*───────────────────────────────────────────────
+ 🔹 ORTAK KULLANICI KAYIT / GÜNCELLEME FONKSİYONU
+   (inviteCode + invitedBy + inviteCount)
+───────────────────────────────────────────────*/
+async function registerOrUpdateUser(payload) {
+  const {
+    telegramId,
+    username = null,
+    firstName = null,
+    photoUrl = null,
+    invitedByRaw = null,
+  } = payload || {};
+
+  if (!telegramId) {
+    throw new Error("telegramId eksik");
+  }
+
+  const telegramIdStr = String(telegramId);
+  const invitedBy = invitedByRaw ? String(invitedByRaw).trim().toUpperCase() : null;
+
+  let user = await prisma.user.findUnique({
+    where: { telegramId: telegramIdStr },
+  });
+
+  if (!user) {
+    const inviteCode = `INV-${telegramIdStr}`;
+
+    user = await prisma.user.create({
+      data: {
+        telegramId: telegramIdStr,
+        username,
+        firstName,
+        photoUrl,
+        inviteCode,
+        invitedBy,
+      },
+    });
+
+    if (invitedBy) {
+      const inviter = await prisma.user.findUnique({
+        where: { inviteCode: invitedBy },
+      });
+      if (inviter) {
+        await prisma.user.update({
+          where: { id: inviter.id },
+          data: { inviteCount: { increment: 1 } },
+        });
+      }
+    }
+  } else {
+    user = await prisma.user.update({
+      where: { telegramId: telegramIdStr },
+      data: {
+        username,
+        firstName,
+        photoUrl,
+      },
+    });
+  }
+
+  return user;
+}
+
+
+/*───────────────────────────────────────────────
+ 🔹 PROFILE.JSX İLE UYUMLU USER REGISTER ENDPOINT
+   POST /user/register
+───────────────────────────────────────────────*/
+app.post("/user/register", async (req, res) => {
+  try {
+    const { telegramId, username, firstName, photoUrl, invitedBy } = req.body || {};
+
+    const user = await registerOrUpdateUser({
+      telegramId,
+      username,
+      firstName,
+      photoUrl,
+      invitedByRaw: invitedBy,
+    });
+
+    return res.json(user);
+  } catch (err) {
+    console.error("register error:", err);
+    return res.status(500).json({ error: "Sunucu hatası" });
+  }
+});
+
+
+/*───────────────────────────────────────────────
+ 🔹 APP.JSX İLE UYUMLU TELEGRAM LOGIN ENDPOINT
+   POST /auth/telegram-login
+   body: { telegramId, username, firstName, lastName, photoUrl, ref }
+───────────────────────────────────────────────*/
+app.post("/auth/telegram-login", async (req, res) => {
+  try {
+    const { telegramId, username, firstName, photoUrl, ref } = req.body || {};
+
+    const user = await registerOrUpdateUser({
+      telegramId,
+      username,
+      firstName,
+      photoUrl,
+      invitedByRaw: ref,
+    });
+
+    return res.json({ user });
+  } catch (err) {
+    console.error("telegram-login error:", err);
+    return res.status(500).json({ error: "Sunucu hatası" });
+  }
+});
+
+
+/*───────────────────────────────────────────────
+ 🔹 OPSİYONEL: TEK KULLANICI GET (gerekirse)
+   GET /user/:telegramId
+───────────────────────────────────────────────*/
+app.get("/user/:telegramId", async (req, res) => {
+  try {
+    const { telegramId } = req.params;
+    if (!telegramId) {
+      return res.status(400).json({ error: "Eksik telegramId" });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { telegramId: String(telegramId) },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: "Kullanıcı bulunamadı" });
+    }
+
+    return res.json(user);
+  } catch (err) {
+    console.error("user fetch error:", err);
+    return res.status(500).json({ error: "Sunucu hatası" });
+  }
+});
+
+
+/*───────────────────────────────────────────────
+ 💸 TRC20 MANUEL ÖDEME BAŞLANGICI
+───────────────────────────────────────────────*/
 app.post("/manual-trc20/start", async (req, res) => {
   try {
     const { userId, level } = req.body;
