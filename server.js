@@ -234,6 +234,57 @@ app.get("/debug/users", async (req, res) => {
   }
 });
 
+
+/*───────────────────────────────────────────────
+ 🧩 TEST USER BAŞLANGIÇ — telefonsuz davet testi
+───────────────────────────────────────────────*/
+app.get("/debug/create-test-user", async (req, res) => {
+  try {
+    const randomId = Math.floor(Math.random() * 9000000) + 1000000;
+
+    if (!process.env.TEST_INVITER_ID) {
+      return res.status(400).json({ error: "TEST_INVITER_ID .env içinde tanımlı değil" });
+    }
+
+    const inviterCode = `INV-${process.env.TEST_INVITER_ID}`;
+
+    const newUser = await prisma.user.create({
+      data: {
+        telegramId: String(randomId),
+        username: `testuser${randomId}`,
+        firstName: "Test",
+        photoUrl: null,
+        inviteCode: `INV-${randomId}`,
+        invitedBy: inviterCode,
+      },
+    });
+
+    const inviter = await prisma.user.findUnique({
+      where: { inviteCode: inviterCode },
+    });
+
+    if (inviter) {
+      await prisma.user.update({
+        where: { id: inviter.id },
+        data: { inviteCount: { increment: 1 } },
+      });
+    }
+
+    res.json({
+      success: true,
+      newUser,
+      message: "🚀 Test kullanıcı oluşturuldu ve davet işlendi.",
+    });
+  } catch (err) {
+    console.error("test user error:", err);
+    res.status(500).json({ error: "test user oluşturulamadı" });
+  }
+});
+/*───────────────────────────────────────────────
+ 🧩 TEST USER BİTİŞ
+───────────────────────────────────────────────*/
+
+
 /*───────────────────────────────────────────────
  🔹 Test
 ───────────────────────────────────────────────*/
